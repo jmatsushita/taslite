@@ -1,0 +1,40 @@
+{
+	"name": "node-sqlite-tasl",
+	"version": "0.0.0",
+	"description": "",
+	"type": "module",
+	"main": "lib/index.js",
+	"types": "lib/index.d.ts",
+	"files": [
+		"lib"
+	],
+	"scripts": {
+		"test": "ava",
+		"build": "tsc",
+		"dev": "tsc -w"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/joeltg/node-sqlite-tasl.git"
+	},
+	"author": "Joel Gustafson",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/joeltg/node-sqlite-tasl/issues"
+	},
+	"homepage": "https://github.com/joeltg/node-sqlite-tasl#readme",
+	"dependencies": {
+		"@types/node": "^17.0.18",
+		"@types/sqlite3": "^3.1.8",
+		"@types/varint": "^6.0.0",
+		"@underlay/namespaces": "^0.3.0",
+		"microcbor": "^0.1.0",
+		"sqlite3": "^5.0.2",
+		"tasl": "^0.3.0-rc.2",
+		"varint": "^6.0.0"
+	},
+	"devDependencies": {
+		"ava": "^4.0.1",
+		"typescript": "^4.5.5"
+	}
+}
