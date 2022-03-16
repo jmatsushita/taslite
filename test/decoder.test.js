@@ -147,43 +147,43 @@ test("Decoding a series of fixed-sized blocks in randomly-sized chunks", async (
 	}
 })
 
-// test("Decoding an instance byte-by-byte", async (t) => {
-// 	const data = Buffer.from(tasl.encodeInstance(microInstance))
+test("Decoding an instance byte-by-byte", async (t) => {
+	const data = Buffer.from(tasl.encodeInstance(microInstance))
 
-// 	const decoder = new Decoder(forBytes(data))
+	const decoder = new Decoder(forBytes(data))
 
-// 	const version = await decoder.decodeUnsignedVarint()
-// 	if (version !== tasl.version) {
-// 		throw new Error("unsupported encoding verison")
-// 	}
+	const version = await decoder.decodeUnsignedVarint()
+	if (version !== tasl.version) {
+		throw new Error("unsupported encoding verison")
+	}
 
-// 	const elements = {}
-// 	for (const [key, type] of microSchema.entries()) {
-// 		elements[key] = new Map()
-// 		let id = 0
-// 		const count = await decoder.decodeUnsignedVarint()
-// 		for (let n = 0; n < count; n++) {
-// 			id += await decoder.decodeUnsignedVarint()
-// 			const value = await decoder.decodeValue(type)
-// 			elements[key].set(id, value)
-// 			id++
-// 		}
-// 	}
+	const elements = {}
+	for (const [key, type] of microSchema.entries()) {
+		elements[key] = new Map()
+		let id = 0
+		const count = await decoder.decodeUnsignedVarint()
+		for (let n = 0; n < count; n++) {
+			id += await decoder.decodeUnsignedVarint()
+			const value = await decoder.decodeElement(type)
+			elements[key].set(id, value)
+			id++
+		}
+	}
 
-// 	const uri = Buffer.from(
-// 		"dweb:/ipfs/bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354"
-// 	)
+	const uri = Buffer.from(
+		"dweb:/ipfs/bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354"
+	)
 
-// 	t.deepEqual(elements, {
-// 		"http://example.com/a": new Map([[0, Buffer.from([0xff, 0x00])]]),
-// 		"http://example.com/b": new Map([
-// 			[0, Buffer.from([0x00, 0x04, ...[0x0f, 0xee, 0x12, 0x00]])],
-// 			[1, Buffer.from([0x01])],
-// 			[2, Buffer.from([0x01])],
-// 			[3, Buffer.from([0x02, uri.byteLength, ...uri])],
-// 		]),
-// 	})
-// })
+	t.deepEqual(elements, {
+		"http://example.com/a": new Map([[0, Buffer.from([0xff, 0x00])]]),
+		"http://example.com/b": new Map([
+			[0, Buffer.from([0x00, 0x04, ...[0x0f, 0xee, 0x12, 0x00]])],
+			[1, Buffer.from([0x01])],
+			[2, Buffer.from([0x01])],
+			[3, Buffer.from([0x02, uri.byteLength, ...uri])],
+		]),
+	})
+})
 
 test("Decoding an instance in randomly-sized chunks", async (t) => {
 	const data = Buffer.from(tasl.encodeInstance(microInstance))
