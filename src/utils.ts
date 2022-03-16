@@ -1,51 +1,29 @@
-import sqlite3 from "sqlite3"
+import { xsd } from "@underlay/namespaces"
 
-export function elementTableName(index: number) {
-	return `c${index}`
+export type Values = Record<string, number | string | Buffer | null>
+
+export function getTableName(classIndex: number) {
+	return `c${classIndex}`
 }
 
-export type Values = Record<string, number | string | Uint8Array>
-
-export function finalize(statement: sqlite3.Statement): Promise<void> {
-	return new Promise((resolve, reject) =>
-		statement.finalize((err) => (err ? reject(err) : resolve()))
-	)
+export function getPropertyName(path: number[]) {
+	if (path.length === 0) {
+		return "e"
+	} else {
+		return `e_${path.join("_")}`
+	}
 }
 
-export function runStatement(
-	statement: sqlite3.Statement,
-	params: Values = {}
-): Promise<void> {
-	return new Promise((resolve, reject) =>
-		statement.run(params, (err) => (err ? reject(err) : resolve()))
-	)
-}
-
-export function getStatement(
-	statement: sqlite3.Statement,
-	params: Values = {}
-): Promise<Values> {
-	return new Promise((resolve, reject) => {
-		statement.get(params, (err, row) => (err ? reject(err) : resolve(row)))
-	})
-}
-
-export function runQuery(
-	db: sqlite3.Database,
-	sql: string,
-	params: Values = {}
-): Promise<void> {
-	return new Promise((resolve, reject) =>
-		db.run(sql, params, (err) => (err ? reject(err) : resolve()))
-	)
-}
-
-export function getQuery(
-	db: sqlite3.Database,
-	sql: string,
-	params: Values = {}
-): Promise<Values> {
-	return new Promise((resolve, reject) =>
-		db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)))
-	)
+export const fixedSizeLiterals: Record<string, number> = {
+	[xsd.boolean]: 1,
+	[xsd.double]: 8,
+	[xsd.float]: 4,
+	[xsd.long]: 8,
+	[xsd.int]: 4,
+	[xsd.short]: 2,
+	[xsd.byte]: 1,
+	[xsd.unsignedLong]: 8,
+	[xsd.unsignedInt]: 4,
+	[xsd.unsignedShort]: 2,
+	[xsd.unsignedByte]: 1,
 }

@@ -1,32 +1,26 @@
 import test from "ava"
 
-import sqlite3 from "sqlite3"
+import Database from "better-sqlite3"
 
 import { DB } from "../lib/db.js"
 
 import { microSchema } from "./instances/micro.js"
 import { nanoSchema } from "./instances/nano.js"
 
-test("Nano", async (t) => {
-	const db = new sqlite3.Database(
-		":memory:",
-		sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE
-	)
+test("Nano", (t) => {
+	const db = new Database(":memory:")
 
-	await DB.setSchema(db, nanoSchema)
+	DB.setSchema(db, nanoSchema)
 
-	const s = await DB.getSchema(db)
+	const s = DB.getSchema(db)
 	t.true(s.isEqualTo(nanoSchema))
 })
 
-test("Micro", async (t) => {
-	const db = new sqlite3.Database(
-		":memory:",
-		sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE
-	)
+test("Micro", (t) => {
+	const db = new Database(":memory:")
 
-	await DB.setSchema(db, microSchema)
+	DB.setSchema(db, microSchema)
 
-	const s = await DB.getSchema(db)
+	const s = DB.getSchema(db)
 	t.true(s.isEqualTo(microSchema))
 })

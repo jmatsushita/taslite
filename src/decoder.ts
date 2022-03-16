@@ -1,39 +1,21 @@
-import { xsd } from "@underlay/namespaces"
+import varint from "varint"
+import * as microcbor from "microcbor"
 import { types, forComponents, optionAtIndex } from "tasl"
+import { fixedSizeLiterals, getPropertyName, Values } from "./utils.js"
+import { rdf, xsd } from "@underlay/namespaces"
 
 /**
- * OK here's what's going on.
- *
  * We're implementing a static DB.import(): DB method for creating *and populating*
  * a database from an async iterator. The async iterator gives us Buffers in chunks,
  * and our goal is to stream them directly into the database.
  *
- * We're storing values as byte arrays anyway, so we don't actually need to "parse"
- * values. We really only need to be scanning the stream as it comes in, parsing the
- * element counts and element IDs, and tracking the start and end of element values.
- *
- * This means the object consuming the async iterable needs to be able to do two things:
- * read an unsigned varint from the stream, and read a value from the stream. We don't
- * want to make any assumptions about the buffer chunks we get from the async iterable,
- * so either other these (values and uvarints) might be split across several chunks.
- *
- * Our state, then, is an array of buffered chunks, along with two pointers tracking the
- * beginning and current location of the current scan. The beginning is represented by
- * Decoder.startOffset, which is an index into the first chunk of the array (Decoder.chunks[0]),
- * and end is represented by Decoder.endOffset, which an index into the last chunk in the array.
- * The first an last chunks are the same if Decoder.chunks.length === 1. If there are no
- * chunks in the array, then startOffset and endOffset are both NaN. For convenience, we also
- * maintain Decoder.byteLength: number, which is the total byte length of the current range,
- * as well as Decoder.lastChunk: null | Buffer, which is a pointer to the last chunk in the array,
- * if it exists.
- *
- * When scanning, we need to a) parse uvarints for element counts and IDs, after which the
- * scanned range can be discarded, and b) scan values, whose scanned range needs to be copied
- * into a newly allocated Buffer for insertion into SQLite. Fortunely for us, scanning values
- * only requires two kinds of operations itself: parsing uvarints (retuning the parsed number
- * but NOT discarded the range) and scanning a fixed number of bytes. In other words, all
- * parts of a value are either fixed size, or are prefixed with a uvarint length.
+ * We do this in two stages: first, we "re-chunk" the stream around element value
+ * boundaries, which involves traversing the expected type and feeding chunks
+ * into an interal buffer. Then we allocate a new ArrayBuffer for the element value,
+ * and walk the type again, this time parsing the individual leafs into a row object.
  */
+
+type ParseState = { buffer: Buffer; offset: number }
 
 export class Decoder {
 	private chunks: Buffer[]
@@ -45,20 +27,6 @@ export class Decoder {
 
 	private static MSB = 0x80
 	private static REST = 0x7f
-
-	private static fixedSizeLiterals: Record<string, number> = {
-		[xsd.boolean]: 1,
-		[xsd.double]: 8,
-		[xsd.float]: 4,
-		[xsd.long]: 8,
-		[xsd.int]: 4,
-		[xsd.short]: 2,
-		[xsd.byte]: 1,
-		[xsd.unsignedLong]: 8,
-		[xsd.unsignedInt]: 4,
-		[xsd.unsignedShort]: 2,
-		[xsd.unsignedByte]: 1,
-	}
 
 	constructor(stream: AsyncIterable<Buffer>) {
 		this.chunks = []
@@ -190,8 +158,8 @@ export class Decoder {
 			// Every literal is either a fixed size literal (boolean, numbers),
 			// or it is prefixed with a uvarint length (string, JSON, binary, and all others)
 			const length =
-				type.datatype in Decoder.fixedSizeLiterals
-					? Decoder.fixedSizeLiterals[type.datatype]
+				type.datatype in fixedSizeLiterals
+					? fixedSizeLiterals[type.datatype]
 					: await this.readUnsignedVarint()
 			await this.skip(length)
 		} else if (type.kind === "product") {
@@ -215,11 +183,130 @@ export class Decoder {
 		return n
 	}
 
-	public async decodeValue(type: types.Type): Promise<Buffer> {
+	public async decodeElement(type: types.Type): Promise<Buffer> {
 		await this.readValue(type)
-		const value = this.collect()
+		const buffer = this.collect()
 		this.flush()
+
+		return buffer
+	}
+
+	public async decodeRow(type: types.Type): Promise<Values> {
+		const buffer = await this.decodeElement(type)
+		const row: Values = {}
+		Decoder.parseRow({ buffer, offset: 0 }, type, [], row)
+		return row
+	}
+
+	private static parseString(state: ParseState): string {
+		const n = varint.decode(state.buffer, state.offset)
+		state.offset += varint.encodingLength(n)
+		const value = state.buffer
+			.subarray(state.offset, state.offset + n)
+			.toString("utf-8")
+		state.offset += n
 		return value
+	}
+
+	// private static parseLiteral(state: ParseState, datatype: string): string | number | Buffer {
+
+	// }
+
+	private static parseRow(
+		state: ParseState,
+		type: types.Type,
+		path: number[],
+		row: Values
+	) {
+		const name = getPropertyName(path)
+		if (type.kind === "uri") {
+			row[name] = Decoder.parseString(state)
+		} else if (type.kind === "literal") {
+			if (type.datatype === xsd.boolean) {
+				row[name] = state.buffer.readUint8(state.offset)
+				state.offset += 1
+			} else if (type.datatype === xsd.double) {
+				row[name] = state.buffer.readDoubleBE(state.offset)
+				state.offset += 8
+			} else if (type.datatype === xsd.float) {
+				row[name] = state.buffer.readFloatBE(state.offset)
+				state.offset += 4
+			} else if (type.datatype === xsd.long) {
+				const value = state.buffer.readBigInt64BE(state.offset)
+				if (value > Number.MAX_SAFE_INTEGER) {
+					throw new Error(
+						"node-sqlite-tasl does not support i64 values greater than Number.MAX_SAFE_INTEGER"
+					)
+				}
+
+				row[name] = Number(value)
+				state.offset += 8
+			} else if (type.datatype === xsd.int) {
+				row[name] = state.buffer.readInt32BE(state.offset)
+				state.offset += 4
+			} else if (type.datatype === xsd.short) {
+				row[name] = state.buffer.readInt16BE(state.offset)
+				state.offset += 2
+			} else if (type.datatype === xsd.byte) {
+				row[name] = state.buffer.readInt8(state.offset)
+				state.offset += 1
+			} else if (type.datatype === xsd.unsignedLong) {
+				const value = state.buffer.readBigUInt64BE(state.offset)
+				if (value > Number.MAX_SAFE_INTEGER) {
+					throw new Error(
+						"node-sqlite-tasl does not support u64 values greater than Number.MAX_SAFE_INTEGER"
+					)
+				} else if (value < Number.MIN_SAFE_INTEGER) {
+					throw new Error(
+						"node-sqlite-tasl does not support u64 values less than Number.MIN_SAFE_INTEGER"
+					)
+				}
+
+				row[name] = Number(value)
+				state.offset += 8
+			} else if (type.datatype === xsd.unsignedInt) {
+				row[name] = state.buffer.readUint32BE(state.offset)
+				state.offset += 4
+			} else if (type.datatype === xsd.unsignedShort) {
+				row[name] = state.buffer.readUint16BE(state.offset)
+				state.offset += 2
+			} else if (type.datatype === xsd.unsignedByte) {
+				row[name] = state.buffer.readUint8(state.offset)
+				state.offset += 1
+			} else if (type.datatype === xsd.hexBinary) {
+				const n = varint.decode(state.buffer, state.offset)
+				state.offset += varint.encodingLength(n)
+				row[name] = state.buffer.subarray(state.offset, state.offset + n)
+				state.offset += n
+			} else if (type.datatype === rdf.JSON) {
+				const n = varint.decode(state.buffer, state.offset)
+				state.offset += varint.encodingLength(n)
+				const value = microcbor.decode(
+					state.buffer.subarray(state.offset, state.offset + n)
+				)
+				state.offset += n
+				row[name] = JSON.stringify(value)
+			} else {
+				row[name] = Decoder.parseString(state)
+			}
+		} else if (type.kind === "product") {
+			for (const [_, component, index] of forComponents(type)) {
+				Decoder.parseRow(state, component, [...path, index], row)
+			}
+		} else if (type.kind === "coproduct") {
+			const index = varint.decode(state.buffer, state.offset)
+			state.offset += varint.encodingLength(index)
+			row[name] = index
+			const [_, option] = optionAtIndex(type, index)
+			Decoder.parseRow(state, option, [...path, index], row)
+		} else if (type.kind === "reference") {
+			const name = getPropertyName(path)
+			const index = varint.decode(state.buffer, state.offset)
+			state.offset += varint.encodingLength(index)
+			row[name] = index
+		} else {
+			throw new Error("internal error: invalid type")
+		}
 	}
 
 	public async *forElements(type: types.Type): AsyncIterable<[number, Buffer]> {
@@ -227,9 +314,17 @@ export class Decoder {
 		const count = await this.decodeUnsignedVarint()
 		for (let n = 0; n < count; n++) {
 			id += await this.decodeUnsignedVarint()
-			const value = await this.decodeValue(type)
-			yield [id, value]
+			const element = await this.decodeElement(type)
+			yield [id, element]
 			id++
+		}
+	}
+
+	public async *forRows(type: types.Type): AsyncIterable<Values> {
+		for await (const [id, buffer] of this.forElements(type)) {
+			const row: Values = { id }
+			Decoder.parseRow({ buffer, offset: 0 }, type, [], row)
+			yield row
 		}
 	}
 }
