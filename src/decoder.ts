@@ -1,7 +1,12 @@
 import varint from "varint"
 import * as microcbor from "microcbor"
-import { types, forComponents, optionAtIndex } from "tasl"
-import { fixedSizeLiterals, getPropertyName, Values } from "./utils.js"
+import { types, forComponents, optionAtIndex, forOptions } from "tasl"
+import {
+	fixedSizeLiterals,
+	getProperties,
+	getPropertyName,
+	Values,
+} from "./utils.js"
 import { rdf, xsd } from "@underlay/namespaces"
 
 /**
@@ -208,9 +213,88 @@ export class Decoder {
 		return value
 	}
 
-	// private static parseLiteral(state: ParseState, datatype: string): string | number | Buffer {
+	private static parseLiteral(
+		state: ParseState,
+		datatype: string
+	): string | number | Buffer {
+		if (datatype === xsd.boolean) {
+			const value = state.buffer.readUint8(state.offset)
+			state.offset += 1
+			return value
+		} else if (datatype === xsd.double) {
+			const value = state.buffer.readDoubleBE(state.offset)
+			state.offset += 8
+			return value
+		} else if (datatype === xsd.float) {
+			const value = state.buffer.readFloatBE(state.offset)
+			state.offset += 4
+			return value
+		} else if (datatype === xsd.long) {
+			const value = state.buffer.readBigInt64BE(state.offset)
+			if (value > Number.MAX_SAFE_INTEGER) {
+				throw new Error(
+					"node-sqlite-tasl does not support i64 values greater than Number.MAX_SAFE_INTEGER"
+				)
+			}
 
-	// }
+			state.offset += 8
+			return Number(value)
+		} else if (datatype === xsd.int) {
+			const value = state.buffer.readInt32BE(state.offset)
+			state.offset += 4
+			return value
+		} else if (datatype === xsd.short) {
+			const value = state.buffer.readInt16BE(state.offset)
+			state.offset += 2
+			return value
+		} else if (datatype === xsd.byte) {
+			const value = state.buffer.readInt8(state.offset)
+			state.offset += 1
+			return value
+		} else if (datatype === xsd.unsignedLong) {
+			const value = state.buffer.readBigUInt64BE(state.offset)
+			if (value > Number.MAX_SAFE_INTEGER) {
+				throw new Error(
+					"node-sqlite-tasl does not support u64 values greater than Number.MAX_SAFE_INTEGER"
+				)
+			} else if (value < Number.MIN_SAFE_INTEGER) {
+				throw new Error(
+					"node-sqlite-tasl does not support u64 values less than Number.MIN_SAFE_INTEGER"
+				)
+			}
+
+			state.offset += 8
+			return Number(value)
+		} else if (datatype === xsd.unsignedInt) {
+			const value = state.buffer.readUint32BE(state.offset)
+			state.offset += 4
+			return value
+		} else if (datatype === xsd.unsignedShort) {
+			const value = state.buffer.readUint16BE(state.offset)
+			state.offset += 2
+			return value
+		} else if (datatype === xsd.unsignedByte) {
+			const value = state.buffer.readUint8(state.offset)
+			state.offset += 1
+			return value
+		} else if (datatype === xsd.hexBinary) {
+			const n = varint.decode(state.buffer, state.offset)
+			state.offset += varint.encodingLength(n)
+			const value = state.buffer.subarray(state.offset, state.offset + n)
+			state.offset += n
+			return value
+		} else if (datatype === rdf.JSON) {
+			const n = varint.decode(state.buffer, state.offset)
+			state.offset += varint.encodingLength(n)
+			const value = microcbor.decode(
+				state.buffer.subarray(state.offset, state.offset + n)
+			)
+			state.offset += n
+			return JSON.stringify(value)
+		} else {
+			return Decoder.parseString(state)
+		}
+	}
 
 	private static parseRow(
 		state: ParseState,
@@ -222,73 +306,7 @@ export class Decoder {
 		if (type.kind === "uri") {
 			row[name] = Decoder.parseString(state)
 		} else if (type.kind === "literal") {
-			if (type.datatype === xsd.boolean) {
-				row[name] = state.buffer.readUint8(state.offset)
-				state.offset += 1
-			} else if (type.datatype === xsd.double) {
-				row[name] = state.buffer.readDoubleBE(state.offset)
-				state.offset += 8
-			} else if (type.datatype === xsd.float) {
-				row[name] = state.buffer.readFloatBE(state.offset)
-				state.offset += 4
-			} else if (type.datatype === xsd.long) {
-				const value = state.buffer.readBigInt64BE(state.offset)
-				if (value > Number.MAX_SAFE_INTEGER) {
-					throw new Error(
-						"node-sqlite-tasl does not support i64 values greater than Number.MAX_SAFE_INTEGER"
-					)
-				}
-
-				row[name] = Number(value)
-				state.offset += 8
-			} else if (type.datatype === xsd.int) {
-				row[name] = state.buffer.readInt32BE(state.offset)
-				state.offset += 4
-			} else if (type.datatype === xsd.short) {
-				row[name] = state.buffer.readInt16BE(state.offset)
-				state.offset += 2
-			} else if (type.datatype === xsd.byte) {
-				row[name] = state.buffer.readInt8(state.offset)
-				state.offset += 1
-			} else if (type.datatype === xsd.unsignedLong) {
-				const value = state.buffer.readBigUInt64BE(state.offset)
-				if (value > Number.MAX_SAFE_INTEGER) {
-					throw new Error(
-						"node-sqlite-tasl does not support u64 values greater than Number.MAX_SAFE_INTEGER"
-					)
-				} else if (value < Number.MIN_SAFE_INTEGER) {
-					throw new Error(
-						"node-sqlite-tasl does not support u64 values less than Number.MIN_SAFE_INTEGER"
-					)
-				}
-
-				row[name] = Number(value)
-				state.offset += 8
-			} else if (type.datatype === xsd.unsignedInt) {
-				row[name] = state.buffer.readUint32BE(state.offset)
-				state.offset += 4
-			} else if (type.datatype === xsd.unsignedShort) {
-				row[name] = state.buffer.readUint16BE(state.offset)
-				state.offset += 2
-			} else if (type.datatype === xsd.unsignedByte) {
-				row[name] = state.buffer.readUint8(state.offset)
-				state.offset += 1
-			} else if (type.datatype === xsd.hexBinary) {
-				const n = varint.decode(state.buffer, state.offset)
-				state.offset += varint.encodingLength(n)
-				row[name] = state.buffer.subarray(state.offset, state.offset + n)
-				state.offset += n
-			} else if (type.datatype === rdf.JSON) {
-				const n = varint.decode(state.buffer, state.offset)
-				state.offset += varint.encodingLength(n)
-				const value = microcbor.decode(
-					state.buffer.subarray(state.offset, state.offset + n)
-				)
-				state.offset += n
-				row[name] = JSON.stringify(value)
-			} else {
-				row[name] = Decoder.parseString(state)
-			}
+			row[name] = Decoder.parseLiteral(state, type.datatype)
 		} else if (type.kind === "product") {
 			for (const [_, component, index] of forComponents(type)) {
 				Decoder.parseRow(state, component, [...path, index], row)
@@ -297,8 +315,17 @@ export class Decoder {
 			const index = varint.decode(state.buffer, state.offset)
 			state.offset += varint.encodingLength(index)
 			row[name] = index
-			const [_, option] = optionAtIndex(type, index)
-			Decoder.parseRow(state, option, [...path, index], row)
+			for (const [key, option, i] of forOptions(type)) {
+				const optionPath = [...path, i]
+				if (index === i) {
+					Decoder.parseRow(state, option, optionPath, row)
+				} else {
+					for (const [path] of getProperties(option, optionPath)) {
+						const name = getPropertyName(path)
+						row[name] = null
+					}
+				}
+			}
 		} else if (type.kind === "reference") {
 			const name = getPropertyName(path)
 			const index = varint.decode(state.buffer, state.offset)

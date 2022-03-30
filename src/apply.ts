@@ -1,19 +1,11 @@
-import { types, values, expressions, forComponents, Mapping } from "tasl"
+import { types, values, expressions, forComponents } from "tasl"
 
-import { DB } from "./db.js"
-
-export function makeMigrationQuery(mapping: Mapping): string {
-	for (const [key] of mapping.entries()) {
-	}
-	return ""
-}
-
-export async function applyExpression(
-	db: DB,
+export function applyExpression(
+	dereference: (key: string, id: number) => [types.Type, values.Value],
 	expression: expressions.Expression,
 	targetType: types.Type,
 	environment: Record<string, [types.Type, values.Value]>
-): Promise<values.Value> {
+): values.Value {
 	if (expression.kind === "uri") {
 		if (targetType.kind !== "uri") {
 			throw new Error("unexpected URI expression")
@@ -38,17 +30,22 @@ export async function applyExpression(
 				throw new Error(`missing component ${key}`)
 			}
 
-			components[key] = await applyExpression(db, source, target, environment)
+			components[key] = applyExpression(
+				dereference,
+				source,
+				target,
+				environment
+			)
 		}
 
 		return values.product(components)
 	} else if (expression.kind === "term") {
 		const { id, path } = expression
-		const [t, v] = await evaluateTerm(db, id, path, environment)
+		const [t, v] = evaluateTerm(dereference, id, path, environment)
 		return project([t, v], targetType)
 	} else if (expression.kind === "match") {
 		const { id, path, cases } = expression
-		const [t, v] = await evaluateTerm(db, id, path, environment)
+		const [t, v] = evaluateTerm(dereference, id, path, environment)
 		if (t.kind !== "coproduct") {
 			throw new Error(
 				"the term value of a match expression must be a coproduct"
@@ -63,7 +60,7 @@ export async function applyExpression(
 			throw new Error(`missing case for option ${v.key}`)
 		}
 
-		return await applyExpression(db, cases[v.key].value, targetType, {
+		return applyExpression(dereference, cases[v.key].value, targetType, {
 			...environment,
 			[cases[v.key].id]: [t.options[v.key], v.value],
 		})
@@ -79,57 +76,51 @@ export async function applyExpression(
 
 		return values.coproduct(
 			expression.key,
-			await applyExpression(db, expression.value, option, environment)
+			applyExpression(dereference, expression.value, option, environment)
 		)
 	} else {
 		throw new Error("invalid expression")
 	}
 }
 
-export async function evaluateTerm(
-	db: DB,
+function evaluateTerm(
+	dereference: (key: string, id: number) => [types.Type, values.Value],
 	id: string,
 	path: (expressions.Projection | expressions.Dereference)[],
 	environment: Record<string, [types.Type, values.Value]>
-): Promise<[types.Type, values.Value]> {
-	return path.reduce<Promise<[types.Type, values.Value]>>(
-		async (term, segment) => {
-			const [t, v] = await term
-			if (segment.kind === "projection") {
-				if (t.kind !== "product") {
-					throw new Error("invalid projection: term value is not a product")
-				} else if (v.kind !== "product") {
-					throw new Error("internal type error")
-				}
-
-				if (t.components[segment.key] === undefined) {
-					throw new Error(
-						`invalid projection: no component with key ${segment.key}`
-					)
-				} else if (v.components[segment.key] === undefined) {
-					throw new Error("internal type error")
-				}
-
-				return [t.components[segment.key], v.components[segment.key]]
-			} else if (segment.kind === "dereference") {
-				if (t.kind !== "reference") {
-					throw new Error("invalid dereference: term value is not a reference")
-				} else if (v.kind !== "reference") {
-					throw new Error("internal type error")
-				}
-
-				const type = db.schema.get(segment.key)
-				const value = await db.get(segment.key, v.id)
-				return [type, value]
-			} else {
-				throw new Error("invalid path segment")
+): [types.Type, values.Value] {
+	return path.reduce<[types.Type, values.Value]>(([t, v], segment) => {
+		if (segment.kind === "projection") {
+			if (t.kind !== "product") {
+				throw new Error("invalid projection: term value is not a product")
+			} else if (v.kind !== "product") {
+				throw new Error("internal type error")
 			}
-		},
-		Promise.resolve(environment[id])
-	)
+
+			if (t.components[segment.key] === undefined) {
+				throw new Error(
+					`invalid projection: no component with key ${segment.key}`
+				)
+			} else if (v.components[segment.key] === undefined) {
+				throw new Error("internal type error")
+			}
+
+			return [t.components[segment.key], v.components[segment.key]]
+		} else if (segment.kind === "dereference") {
+			if (t.kind !== "reference") {
+				throw new Error("invalid dereference: term value is not a reference")
+			} else if (v.kind !== "reference") {
+				throw new Error("internal type error")
+			}
+
+			return dereference(segment.key, v.id)
+		} else {
+			throw new Error("invalid path segment")
+		}
+	}, environment[id])
 }
 
-export function project(
+function project(
 	[t, v]: [types.Type, values.Value],
 	targetType: types.Type
 ): values.Value {
