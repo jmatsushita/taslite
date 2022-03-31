@@ -233,7 +233,7 @@ export class Decoder {
 			const value = state.buffer.readBigInt64BE(state.offset)
 			if (value > Number.MAX_SAFE_INTEGER) {
 				throw new Error(
-					"node-sqlite-tasl does not support i64 values greater than Number.MAX_SAFE_INTEGER"
+					"taslite does not support i64 values greater than Number.MAX_SAFE_INTEGER"
 				)
 			}
 
@@ -255,11 +255,11 @@ export class Decoder {
 			const value = state.buffer.readBigUInt64BE(state.offset)
 			if (value > Number.MAX_SAFE_INTEGER) {
 				throw new Error(
-					"node-sqlite-tasl does not support u64 values greater than Number.MAX_SAFE_INTEGER"
+					"taslite does not support u64 values greater than Number.MAX_SAFE_INTEGER"
 				)
 			} else if (value < Number.MIN_SAFE_INTEGER) {
 				throw new Error(
-					"node-sqlite-tasl does not support u64 values less than Number.MIN_SAFE_INTEGER"
+					"taslite does not support u64 values less than Number.MIN_SAFE_INTEGER"
 				)
 			}
 

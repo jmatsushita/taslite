@@ -1,6 +1,6 @@
-# node-sqlite-tasl
+# taslite
 
-A sqlite-backed database for tasl instances
+A sqlite-backed database for tasl instances.
 
 ## API
 
@@ -54,14 +54,14 @@ export declare class DB {
 }
 ```
 
-node-sqlite-tasl uses [better-sqlite](https://github.com/JoshuaWise/better-sqlite3) for sqlite3 bindings, which has a _synchronous API_ that blocks on the main thread. All the database methods here, except for `DB.import` / `DB.export` and `DB.migrate`, are also synchronous.
+taslite uses [better-sqlite](https://github.com/JoshuaWise/better-sqlite3) for sqlite3 bindings, which has a _synchronous API_ that blocks on the main thread. All the database methods here, except for `DB.import` / `DB.export` and `DB.migrate`, are also synchronous.
 
 ## Getting and setting elements
 
-Elements in a tasl instance each have an unsigned integer `id`, unique within each class. The simplest way to use node-sqlite-tasl is with the `.get` and `.set` methods.
+Elements in a tasl instance each have an unsigned integer `id`, unique within each class. The simplest way to use taslite is with the `.get` and `.set` methods.
 
 ```ts
-import { DB } from "node-sqlite-tasl"
+import { DB } from "taslite"
 import * as tasl from "tasl"
 
 const schema = tasl.parseSchema(`
@@ -240,7 +240,7 @@ Create a new database with a given schema
 ```ts
 import fs from "node:fs"
 
-import { DB } from "node-sqlite-tasl"
+import { DB } from "taslite"
 import * as tasl from "tasl"
 
 const schemaPath = "./test/instances/micro.schema"
@@ -255,7 +255,7 @@ Open an existing `.sqlite` database
 ```ts
 import fs from "node:fs"
 
-import { DB } from "node-sqlite-tasl"
+import { DB } from "taslite"
 import * as tasl from "tasl"
 
 const databasePath = "example.sqlite"
@@ -268,7 +268,7 @@ Import an existing instance from a `.instance` file
 ```ts
 import fs from "node:fs"
 
-import { DB } from "node-sqlite-tasl"
+import { DB } from "taslite"
 import * as tasl from "tasl"
 
 const schemaPath = "./example.schema"
