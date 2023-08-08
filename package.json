@@ -24,11 +24,11 @@
 	},
 	"homepage": "https://github.com/joeltg/taslite#readme",
 	"dependencies": {
-		"@types/better-sqlite3": "^7.5.0",
-		"@types/node": "^17.0.18",
+		"@types/node": "18.17.3",
 		"@types/varint": "^6.0.0",
+		"@types/better-sqlite3": "^7.6.4",
 		"@underlay/namespaces": "^0.3.0",
-		"better-sqlite3": "^7.5.0",
+		"better-sqlite3": "^8.3.0",
 		"microcbor": "^0.1.0",
 		"tasl": "^0.3.0-rc.3",
 		"varint": "^6.0.0"
