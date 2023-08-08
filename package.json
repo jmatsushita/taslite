@@ -10,6 +10,7 @@
 	],
 	"scripts": {
 		"test": "ava",
+		"prepack": "tsc",
 		"build": "tsc",
 		"dev": "tsc -w"
 	},
